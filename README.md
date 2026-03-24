@@ -6,6 +6,14 @@
 
 nftables 是 Linux 的防火墙工具，用于控制网络流量。它是 iptables 的现代替代品，语法更简单，性能更好。
 
+## 一键管理脚本
+
+```bash
+wget -qO- https://raw.githubusercontent.com/你的用户名/nftbales/main/scripts/nft-menu.sh | sudo bash
+```
+
+提供交互式菜单，快速管理 nftables 规则。详见 [scripts/README.md](./scripts/README.md)
+
 ## 快速开始
 
 如果你完全不懂 nftables，建议按以下顺序学习：
@@ -62,13 +70,16 @@ nft flush ruleset
 ```
 nftbales/
 ├── README.md                    # 本文件
-└── docs/                        # 教程文档
-    ├── 01-基础概念.md
-    ├── 02-端口转发-内网IP.md
-    ├── 03-端口转发-公网IP.md
-    ├── 04-禁用UDP流量.md
-    ├── 05-规则管理.md
-    └── 06-快速参考.md
+├── docs/                        # 教程文档
+│   ├── 01-基础概念.md
+│   ├── 02-端口转发-内网IP.md
+│   ├── 03-端口转发-公网IP.md
+│   ├── 04-禁用UDP流量.md
+│   ├── 05-规则管理.md
+│   └── 06-快速参考.md
+└── scripts/                     # 管理脚本
+    ├── README.md
+    └── nft-menu.sh             # 交互式管理菜单
 ```
 
 ## 学习建议
