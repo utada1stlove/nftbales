@@ -9,7 +9,7 @@ nftables 是 Linux 的防火墙工具，用于控制网络流量。它是 iptabl
 ## 一键管理脚本
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/你的用户名/nftbales/main/scripts/nft-menu.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/utada1stlove/nftbales/refs/heads/main/scripts/nft-menu.sh | sudo bash
 ```
 
 提供交互式菜单，快速管理 nftables 规则。详见 [scripts/README.md](./scripts/README.md)

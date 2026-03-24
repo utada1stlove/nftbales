@@ -5,13 +5,13 @@
 ## 一键安装使用
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/你的用户名/nftbales/main/scripts/nft-menu.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/utada1stlove/nftbales/refs/heads/main/scripts/nft-menu.sh | sudo bash
 ```
 
 或者下载后使用：
 
 ```bash
-wget https://raw.githubusercontent.com/你的用户名/nftbales/main/scripts/nft-menu.sh
+wget https://raw.githubusercontent.com/utada1stlove/nftbales/refs/heads/main/scripts/nft-menu.sh
 chmod +x nft-menu.sh
 sudo ./nft-menu.sh
 ```
