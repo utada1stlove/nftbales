@@ -75,13 +75,68 @@ nft add rule inet filter input udp dport { 53, 123 } accept
 nft add rule inet filter input udp drop
 ```
 
+## input vs output：什么时候用哪个？
+
+### input 链：处理进入本机的流量
+
+用于阻止**外部发送到本机**的流量。
+
+**使用场景**：
+- 阻止外部访问本机的某个服务端口
+- 防止外部 UDP 攻击
+- 限制外部连接
+
+```bash
+# 例子：阻止外部访问本机的 DNS 服务（53端口）
+nft add rule inet filter input udp dport 53 drop
+```
+
+### output 链：处理从本机发出的流量
+
+用于阻止**本机发送到外部**的流量。
+
+**使用场景**：
+- 本机运行代理（如 ss、v2ray）访问外部服务
+- 限制本机程序的网络访问
+- 阻止本机发出特定流量
+
+```bash
+# 1. 创建 output 链（如果不存在）
+nft add chain inet filter output { type filter hook output priority 0 \; policy accept \; }
+
+# 2. 阻止本机通过 14083 端口发出的 UDP 流量
+nft add rule inet filter output udp sport 14083 drop
+```
+
+### 实际场景：禁用代理的 UDP 流量
+
+**场景**：你在本机 14083 端口运行 ss 代理观看 YouTube，想禁用这个代理的 UDP 流量。
+
+```bash
+# 创建 output 链
+nft add chain inet filter output { type filter hook output priority 0 \; policy accept \; }
+
+# 禁用从 14083 端口发出的 UDP（使用 sport 源端口）
+nft add rule inet filter output udp sport 14083 drop
+
+# 或者禁用发往 14083 端口的 UDP（使用 dport 目标端口）
+nft add rule inet filter output udp dport 14083 drop
+```
+
+**注意**：
+- `sport`（source port）：源端口，流量从这个端口发出
+- `dport`（destination port）：目标端口，流量发往这个端口
+- 代理场景通常需要根据实际情况选择 `sport` 或 `dport`
+
 ## 命令解释
 
 | 命令部分 | 含义 |
 |---------|------|
 | `inet filter` | 使用 inet 表的 filter 功能 |
 | `input` | 处理进入本机的流量 |
+| `output` | 处理从本机发出的流量 |
 | `udp dport 53` | 匹配目标端口为 53 的 UDP 流量 |
+| `udp sport 53` | 匹配源端口为 53 的 UDP 流量 |
 | `drop` | 丢弃该流量（静默拒绝） |
 | `reject` | 拒绝并返回错误信息 |
 
