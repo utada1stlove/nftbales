@@ -35,6 +35,7 @@ wget -qO- https://raw.githubusercontent.com/utada1stlove/nftbales/refs/heads/mai
 
 ### 流量控制
 - 禁用特定端口的 UDP 流量
+- 按端口查看 TCP / UDP 的累计流量
 - 限制访问来源
 
 ### 规则管理

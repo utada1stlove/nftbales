@@ -24,8 +24,19 @@ nft add table inet filter
 # 2. 创建 input 链（如果不存在）
 nft add chain inet filter input { type filter hook input priority 0 \; policy accept \; }
 
-# 3. 禁用 UDP 端口 53
+# 3. 如需限制本机主动发出的 UDP，再创建 output 链
+nft add chain inet filter output { type filter hook output priority 0 \; policy accept \; }
+
+# 4. 禁用进入本机的 UDP 端口 53
 nft add rule inet filter input udp dport 53 drop
+```
+
+### 同时禁用 input 和 output
+
+```bash
+# 同时阻断进入本机和本机发往外部的 UDP/443
+nft add rule inet filter input udp dport 443 drop
+nft add rule inet filter output udp dport 443 drop
 ```
 
 ### 禁用多个端口
@@ -41,6 +52,16 @@ nft add rule inet filter input udp dport { 53, 123 } drop
 # 禁用 UDP 端口 10000-20000
 nft add rule inet filter input udp dport 10000-20000 drop
 ```
+
+### 在脚本里按任意 UDP 端口控制
+
+`scripts/nft-menu.sh` 现在支持：
+
+- 单端口，例如 `443`
+- 端口范围，例如 `10000-20000`
+- 方向 `input` / `output` / `both`
+
+所以现在不再只是围绕 `UDP/443`，其他代理端口、游戏端口、DNS/NTP 端口也能直接用菜单处理。
 
 ## 完整示例
 
@@ -195,8 +216,9 @@ nft add rule inet filter input udp dport 19132 drop
 ### 禁用 QUIC（HTTP/3）
 
 ```bash
-# QUIC 使用 UDP 443
+# QUIC 使用 UDP 443；代理/看 YouTube 的场景通常建议同时处理 input 和 output
 nft add rule inet filter input udp dport 443 drop
+nft add rule inet filter output udp dport 443 drop
 ```
 
 ### 只允许本地 UDP

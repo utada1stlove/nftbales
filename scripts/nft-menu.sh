@@ -9,6 +9,8 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
+TRAFFIC_STATE_DIR="/etc/nftbales"
+TRAFFIC_WATCH_FILE="${TRAFFIC_STATE_DIR}/traffic-watch.list"
 
 check_root() {
     if [ "$EUID" -ne 0 ]; then
@@ -31,6 +33,83 @@ check_nft() {
             exit 1
         fi
     fi
+}
+
+ensure_state_dir() {
+    mkdir -p "$TRAFFIC_STATE_DIR"
+    [[ -f "$TRAFFIC_WATCH_FILE" ]] || : > "$TRAFFIC_WATCH_FILE"
+}
+
+validate_port_spec() {
+    local value="$1" start end
+    [[ "$value" =~ ^[0-9]+(-[0-9]+)?$ ]] || return 1
+    if [[ "$value" == *-* ]]; then
+        start="${value%-*}"
+        end="${value#*-}"
+        (( start >= 1 && start <= 65535 && end >= start && end <= 65535 ))
+    else
+        (( value >= 1 && value <= 65535 ))
+    fi
+}
+
+format_bytes() {
+    local bytes="${1:-0}"
+    if (( bytes < 1024 )); then
+        printf '%s B' "$bytes"
+    elif (( bytes < 1024 * 1024 )); then
+        awk -v value="$bytes" 'BEGIN { printf "%.1f KB", value / 1024 }'
+    elif (( bytes < 1024 * 1024 * 1024 )); then
+        awk -v value="$bytes" 'BEGIN { printf "%.1f MB", value / (1024 * 1024) }'
+    else
+        awk -v value="$bytes" 'BEGIN { printf "%.2f GB", value / (1024 * 1024 * 1024) }'
+    fi
+}
+
+format_packets() {
+    local packets="${1:-0}"
+    if (( packets < 1000 )); then
+        printf '%s' "$packets"
+    elif (( packets < 1000000 )); then
+        awk -v value="$packets" 'BEGIN { printf "%.1fK", value / 1000 }'
+    else
+        awk -v value="$packets" 'BEGIN { printf "%.1fM", value / 1000000 }'
+    fi
+}
+
+traffic_rule_comment() {
+    local proto="$1" port="$2" direction="$3"
+    printf 'nftbales-traffic:%s:%s:%s' "$proto" "$port" "$direction"
+}
+
+init_traffic_table() {
+    nft add table inet traffic_stats 2>/dev/null || true
+    nft add chain inet traffic_stats input { type filter hook input priority 0 \; policy accept \; } 2>/dev/null || true
+    nft add chain inet traffic_stats output { type filter hook output priority 0 \; policy accept \; } 2>/dev/null || true
+}
+
+traffic_watch_exists() {
+    local proto="$1" port="$2"
+    grep -Fxq "${proto}|${port}" "$TRAFFIC_WATCH_FILE" 2>/dev/null
+}
+
+get_traffic_handle() {
+    local chain="$1" proto="$2" port="$3" direction="$4"
+    local comment
+    comment="$(traffic_rule_comment "$proto" "$port" "$direction")"
+    nft -a list chain inet traffic_stats "$chain" 2>/dev/null \
+        | grep -F "comment \"$comment\"" \
+        | sed -n 's/.*handle \([0-9]\+\)$/\1/p' \
+        | tail -1
+}
+
+get_traffic_counters() {
+    local chain="$1" proto="$2" port="$3" direction="$4"
+    local comment line packets bytes
+    comment="$(traffic_rule_comment "$proto" "$port" "$direction")"
+    line="$(nft -a list chain inet traffic_stats "$chain" 2>/dev/null | grep -F "comment \"$comment\"" | head -1 || true)"
+    packets="$(printf '%s\n' "$line" | sed -n 's/.*packets \([0-9]\+\) bytes \([0-9]\+\).*/\1/p')"
+    bytes="$(printf '%s\n' "$line" | sed -n 's/.*packets \([0-9]\+\) bytes \([0-9]\+\).*/\2/p')"
+    printf '%s|%s\n' "${packets:-0}" "${bytes:-0}"
 }
 
 enable_forward() {
@@ -91,13 +170,164 @@ block_udp() {
 
     nft add table inet filter 2>/dev/null || true
     nft add chain inet filter input { type filter hook input priority 0 \; policy accept \; } 2>/dev/null || true
+    nft add chain inet filter output { type filter hook output priority 0 \; policy accept \; } 2>/dev/null || true
 
     echo "输入要禁用的端口 (单个端口或范围，如 53 或 8000-9000):"
     read -r port
 
-    nft add rule inet filter input udp dport ${port} drop
+    echo "方向 (input/output/both) [both]:"
+    read -r direction
+    direction="${direction:-both}"
 
-    echo -e "${GREEN}已禁用 UDP 端口 ${port}${NC}"
+    case "${direction}" in
+        input)
+            nft add rule inet filter input udp dport ${port} drop
+            echo -e "${GREEN}已禁用进入本机的 UDP 端口 ${port}${NC}"
+            ;;
+        output)
+            nft add rule inet filter output udp dport ${port} drop
+            echo -e "${GREEN}已禁用本机发出的 UDP 目标端口 ${port}${NC}"
+            ;;
+        both)
+            nft add rule inet filter input udp dport ${port} drop
+            nft add rule inet filter output udp dport ${port} drop
+            echo -e "${GREEN}已同时禁用 input/output 的 UDP 端口 ${port}${NC}"
+            ;;
+        *)
+            echo -e "${RED}无效方向，请输入 input、output 或 both${NC}"
+            return 1
+            ;;
+    esac
+
+    if [[ "${port}" == "443" ]]; then
+        echo -e "${YELLOW}提示: UDP/443 常用于 QUIC，屏蔽后 YouTube 等场景通常会回退到 TCP/TLS${NC}"
+    fi
+}
+
+add_port_traffic_watch() {
+    local port proto_choice proto
+
+    echo -e "${YELLOW}=== 添加端口流量统计 ===${NC}"
+    ensure_state_dir
+    init_traffic_table
+
+    while true; do
+        echo "输入要统计的端口或范围 (如 443 或 8000-8099):"
+        read -r port
+        validate_port_spec "$port" && break
+        echo -e "${RED}端口格式无效${NC}"
+    done
+
+    echo "协议 (tcp/udp/both) [both]:"
+    read -r proto_choice
+    proto_choice="${proto_choice:-both}"
+
+    case "$proto_choice" in
+        tcp|udp)
+            for proto in "$proto_choice"; do
+                if traffic_watch_exists "$proto" "$port"; then
+                    echo -e "${YELLOW}${proto}/${port} 已存在，跳过${NC}"
+                    continue
+                fi
+                nft add rule inet traffic_stats input "$proto" dport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" input)"
+                nft add rule inet traffic_stats output "$proto" sport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" output)"
+                printf '%s|%s\n' "$proto" "$port" >> "$TRAFFIC_WATCH_FILE"
+                echo -e "${GREEN}已开始统计 ${proto}/${port}${NC}"
+            done
+            ;;
+        both)
+            for proto in tcp udp; do
+                if traffic_watch_exists "$proto" "$port"; then
+                    echo -e "${YELLOW}${proto}/${port} 已存在，跳过${NC}"
+                    continue
+                fi
+                nft add rule inet traffic_stats input "$proto" dport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" input)"
+                nft add rule inet traffic_stats output "$proto" sport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" output)"
+                printf '%s|%s\n' "$proto" "$port" >> "$TRAFFIC_WATCH_FILE"
+                echo -e "${GREEN}已开始统计 ${proto}/${port}${NC}"
+            done
+            ;;
+        *)
+            echo -e "${RED}无效协议，请输入 tcp、udp 或 both${NC}"
+            return 1
+            ;;
+    esac
+}
+
+list_port_traffic_stats() {
+    local proto port input_stats output_stats in_packets in_bytes out_packets out_bytes total_packets total_bytes found=0
+
+    echo -e "${YELLOW}=== 端口流量统计 ===${NC}"
+    ensure_state_dir
+
+    while IFS='|' read -r proto port; do
+        [[ -n "${proto:-}" && -n "${port:-}" ]] || continue
+        input_stats="$(get_traffic_counters input "$proto" "$port" input)"
+        output_stats="$(get_traffic_counters output "$proto" "$port" output)"
+        in_packets="${input_stats%%|*}"
+        in_bytes="${input_stats#*|}"
+        out_packets="${output_stats%%|*}"
+        out_bytes="${output_stats#*|}"
+        total_packets=$((in_packets + out_packets))
+        total_bytes=$((in_bytes + out_bytes))
+
+        printf '  %-4s %-12s in=%-18s out=%-18s total=%s\n' \
+            "${proto^^}" \
+            "$port" \
+            "$(format_packets "$in_packets") / $(format_bytes "$in_bytes")" \
+            "$(format_packets "$out_packets") / $(format_bytes "$out_bytes")" \
+            "$(format_bytes "$total_bytes")"
+        found=1
+    done < "$TRAFFIC_WATCH_FILE"
+
+    if [[ "$found" -eq 0 ]]; then
+        echo -e "${YELLOW}当前没有正在统计的端口${NC}"
+        echo -e "${YELLOW}提示: 这是按端口规则计数，不是 vnstat 的整机流量${NC}"
+    fi
+}
+
+remove_port_traffic_watch() {
+    local selection proto port line tmp
+    local -a entries
+
+    ensure_state_dir
+    mapfile -t entries < <(grep -Ev '^[[:space:]]*$' "$TRAFFIC_WATCH_FILE" 2>/dev/null || true)
+
+    if [[ "${#entries[@]}" -eq 0 ]]; then
+        echo -e "${YELLOW}当前没有正在统计的端口${NC}"
+        return 0
+    fi
+
+    list_port_traffic_stats
+    echo
+    echo "输入要删除的编号:"
+    local index=1
+    for line in "${entries[@]}"; do
+        proto="${line%%|*}"
+        port="${line#*|}"
+        printf '  %d) %s/%s\n' "$index" "${proto^^}" "$port"
+        index=$((index + 1))
+    done
+
+    read -r selection
+    [[ "$selection" =~ ^[0-9]+$ ]] || { echo -e "${RED}编号无效${NC}"; return 1; }
+    (( selection >= 1 && selection <= ${#entries[@]} )) || { echo -e "${RED}编号无效${NC}"; return 1; }
+
+    line="${entries[$((selection - 1))]}"
+    proto="${line%%|*}"
+    port="${line#*|}"
+
+    local input_handle output_handle
+    input_handle="$(get_traffic_handle input "$proto" "$port" input)"
+    output_handle="$(get_traffic_handle output "$proto" "$port" output)"
+    [[ -n "$input_handle" ]] && nft delete rule inet traffic_stats input handle "$input_handle"
+    [[ -n "$output_handle" ]] && nft delete rule inet traffic_stats output handle "$output_handle"
+
+    tmp="$(mktemp)"
+    grep -Fvx "$line" "$TRAFFIC_WATCH_FILE" > "$tmp" 2>/dev/null || true
+    mv "$tmp" "$TRAFFIC_WATCH_FILE"
+
+    echo -e "${GREEN}已移除 ${proto^^}/${port} 的流量统计${NC}"
 }
 
 list_rules() {
@@ -153,6 +383,9 @@ show_menu() {
     echo "5. 保存规则"
     echo "6. 清空所有规则"
     echo "7. 开启 IP 转发"
+    echo "8. 添加端口流量统计"
+    echo "9. 查看端口流量统计"
+    echo "10. 删除端口流量统计"
     echo "0. 退出"
     echo -e "${GREEN}================================${NC}"
 }
@@ -160,6 +393,7 @@ show_menu() {
 main() {
     check_root
     check_nft
+    ensure_state_dir
 
     while true; do
         show_menu
@@ -173,6 +407,9 @@ main() {
             5) save_rules ;;
             6) flush_rules ;;
             7) enable_forward ;;
+            8) add_port_traffic_watch ;;
+            9) list_port_traffic_stats ;;
+            10) remove_port_traffic_watch ;;
             0) echo "退出"; exit 0 ;;
             *) echo -e "${RED}无效选项${NC}" ;;
         esac

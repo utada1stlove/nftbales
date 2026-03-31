@@ -19,12 +19,15 @@ sudo ./nft-menu.sh
 ## 功能列表
 
 1. **添加端口转发** - 支持指定网卡、TCP/UDP 协议
-2. **禁用 UDP 端口** - 快速禁用指定端口的 UDP 流量
+2. **禁用 UDP 端口** - 按 `input` / `output` / `both` 快速禁用指定端口的 UDP 流量
 3. **查看所有规则** - 显示当前所有 nftables 规则
 4. **删除规则** - 通过句柄号删除指定规则
 5. **保存规则** - 持久化保存到 /etc/nftables.conf
 6. **清空所有规则** - 清空所有 nftables 规则
 7. **开启 IP 转发** - 启用内核 IP 转发功能
+8. **添加端口流量统计** - 为指定 TCP/UDP 端口建立 `counter`
+9. **查看端口流量统计** - 查看 `input dport` + `output sport` 的累计流量
+10. **删除端口流量统计** - 停止统计某个端口
 
 ## 使用说明
 
@@ -32,6 +35,7 @@ sudo ./nft-menu.sh
 - 检查是否为 root 权限
 - 检测并安装 nftables（如果未安装）
 - 初始化必要的表和链
+- 将按端口统计的目标记录到 `/etc/nftbales/traffic-watch.list`
 
 ## 注意事项
 
