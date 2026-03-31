@@ -229,8 +229,8 @@ add_port_traffic_watch() {
                     echo -e "${YELLOW}${proto}/${port} 已存在，跳过${NC}"
                     continue
                 fi
-                nft add rule inet traffic_stats input "$proto" dport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" input)"
-                nft add rule inet traffic_stats output "$proto" sport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" output)"
+                nft add rule inet traffic_stats input "$proto" dport "$port" counter comment "\"$(traffic_rule_comment "$proto" "$port" input)\""
+                nft add rule inet traffic_stats output "$proto" sport "$port" counter comment "\"$(traffic_rule_comment "$proto" "$port" output)\""
                 printf '%s|%s\n' "$proto" "$port" >> "$TRAFFIC_WATCH_FILE"
                 echo -e "${GREEN}已开始统计 ${proto}/${port}${NC}"
             done
@@ -241,8 +241,8 @@ add_port_traffic_watch() {
                     echo -e "${YELLOW}${proto}/${port} 已存在，跳过${NC}"
                     continue
                 fi
-                nft add rule inet traffic_stats input "$proto" dport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" input)"
-                nft add rule inet traffic_stats output "$proto" sport "$port" counter comment "$(traffic_rule_comment "$proto" "$port" output)"
+                nft add rule inet traffic_stats input "$proto" dport "$port" counter comment "\"$(traffic_rule_comment "$proto" "$port" input)\""
+                nft add rule inet traffic_stats output "$proto" sport "$port" counter comment "\"$(traffic_rule_comment "$proto" "$port" output)\""
                 printf '%s|%s\n' "$proto" "$port" >> "$TRAFFIC_WATCH_FILE"
                 echo -e "${GREEN}已开始统计 ${proto}/${port}${NC}"
             done
