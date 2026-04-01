@@ -14,6 +14,11 @@ wget -qO- https://raw.githubusercontent.com/utada1stlove/nftbales/refs/heads/mai
 
 提供交互式菜单，快速管理 nftables 规则。详见 [scripts/README.md](./scripts/README.md)
 
+当前脚本已经补上两类更贴近 VPS 代理场景的能力：
+
+- `禁用 UDP 端口` 不再只处理单一方向，可以直接选择 `input` / `output` / `both`
+- `端口流量统计` 会额外创建独立的 `counter` 规则，弥补 `vnstat` 只能看整机网卡总流量的问题
+
 ## 快速开始
 
 如果你完全不懂 nftables，建议按以下顺序学习：
@@ -34,7 +39,7 @@ wget -qO- https://raw.githubusercontent.com/utada1stlove/nftbales/refs/heads/mai
 - 公网IP转发（如：将本机 80 端口转发到 5.6.7.8:8080）
 
 ### 流量控制
-- 禁用特定端口的 UDP 流量
+- 禁用特定端口或端口范围的 UDP 流量，并区分 `input` / `output` / `both`
 - 按端口查看 TCP / UDP 的累计流量
 - 限制访问来源
 
